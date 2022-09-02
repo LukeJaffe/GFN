@@ -3,6 +3,14 @@ This repository implements the models described in the paper, "Gallery Filter Ne
 The Object Search Research (OSR) package implements data prep, training, and inference for the
 CUHK-SYSU and PRW datasets. The package is easily extensible to other datasets.
 
+We achieve state-of-the-art results on the benchmark CUHK-SYSU and PRW datasets, shown below, with
+downloadable model checkpoints.
+
+| Dataset   | mAP  | Top-1 | Model                                                        |
+| --------- | ---- | ----- | ------------------------------------------------------------ |
+| CUHK-SYSU | 96.4 | 97.0  | [model](https://drive.google.com) |
+| PRW       | 58.3 | 92.4  | [model](https://drive.google.com) |
+
 ## Installation
 The OSR package can be installed with docker or conda.
 We provide example install instructions below, so the user can use
