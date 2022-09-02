@@ -8,8 +8,8 @@ downloadable model checkpoints.
 
 | Dataset   | mAP  | Top-1 | Model                                                        |
 | --------- | ---- | ----- | ------------------------------------------------------------ |
-| CUHK-SYSU | 96.4 | 97.0  | [model](https://drive.google.com) |
-| PRW       | 58.3 | 92.4  | [model](https://drive.google.com) |
+| CUHK-SYSU | 96.4 | 97.0  | [model](https://drive.google.com/file/d/1wWoQkpWN9-F1i8GqfX26DTf_mRNvxfZH/view?usp=sharing) |
+| PRW       | 58.3 | 92.4  | [model](https://drive.google.com/file/d/17j8rYkcxPx599Eh6T-o6S9WvlRITOPt0/view?usp=sharing) |
 
 ## Installation
 The OSR package can be installed with docker or conda.

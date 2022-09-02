@@ -33,4 +33,4 @@ trial_name: 'prw_final'
 eval_interval: 30
 ckpt_interval: 30
 log_dir: './logging'
-ckpt_path: './ckpt/prw_train_final_e30.pkl'
+ckpt_path: './ckpt/prw_final_convnext-base_e30.pkl'
