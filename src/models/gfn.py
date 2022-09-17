@@ -330,8 +330,7 @@ class GalleryFilterNetwork(nn.Module):
                                         neg_query_counter[query_label] += 1
                                         if neg_query_counter[query_label] == self.neg_num_sample:
                                             break
-            print('Num batch: {}, Num chosen: {}/{}'.format(
-                len(image_id_list), len(chosen_image_id_set), len(query_label_union)))
+
             ## Store new entries in LUT
             for image_idx, image_id in enumerate(image_id_list):
                 image_mask = gfn_image_idx_tsr == image_idx

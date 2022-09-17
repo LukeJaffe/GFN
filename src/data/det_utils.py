@@ -5,6 +5,7 @@ import collections
 import numpy as np
 import torch
 import torchvision
+import pandas as pd
 
 
 #
@@ -37,11 +38,13 @@ def get_coco(root, dataset_name, image_set, transforms):
     # Load annotation file
     with open(ann_file, 'r') as fp:
         ann_dict = json.load(fp)
+
     # Load images
     img_set = set()
     for i, img in enumerate(ann_dict['images']):
         img_set.add(img['id'])
     img_list = sorted(list(img_set))
+
     # Load annos
     pid_set, uid_set = set(), set()
     pid_img_set_dict = collections.defaultdict(set)
@@ -61,14 +64,19 @@ def get_coco(root, dataset_name, image_set, transforms):
         'num_pid': len(pid_list),
         'num_uid': len(uid_list),
     }
+
     # Create lookup
     for idx, pid in enumerate(pid_list, 1):
         pid_lookup_dict['pid_lookup'][pid] = idx
 
-    #
-    print('Num pids: {}'.format(pid_lookup_dict['num_pid']))
-    print('Num uids: {}'.format(pid_lookup_dict['num_uid']))
-    print('Num imgs: {}'.format(pid_lookup_dict['num_img']))
+    # Show partition information
+    info_dict = {image_set: {
+        '# Images': pid_lookup_dict['num_img'],
+        '# Known ID': pid_lookup_dict['num_pid'],
+        '# Unknown ID': pid_lookup_dict['num_uid'],
+    }}
+    info_df = pd.DataFrame(info_dict).T
+    print(info_df)
 
     # Load special dataset loading transform
     t = [ConvertCoco(pid_lookup_dict)]
@@ -79,16 +87,23 @@ def get_coco(root, dataset_name, image_set, transforms):
 
     dataset = CocoDetection(img_folder, ann_file, transforms=transforms)
 
-    if image_set == 'train':
-        print(len(dataset))
+    # Hacky: remove images without annotations if partition has 'train' string in it
+    if 'train' in image_set:
+        len_before = len(dataset)
         dataset = _remove_images_without_annotations(dataset)
-        print(len(dataset))
+        len_after = len(dataset)
+        print('==> Removed images in "{}" without annotations: {}/{}'.format(
+            image_set, len_before - len_after, len_before))
 
     return dataset, pid_lookup_dict
 
 
 class TestSampler(torch.utils.data.Sampler):
     def __init__(self, partition_name, dataset, retrieval_dir, retrieval_name_list):
+        # If dataset is subset, get dataset object
+        if isinstance(dataset, torch.utils.data.Subset):
+            dataset = dataset.dataset
+        # Store params
         self.partition_name = partition_name
         self.dataset = dataset
         self.retrieval_dir = retrieval_dir
@@ -147,18 +162,17 @@ class ConvertCoco(object):
         boxes[:, 0::2].clamp_(min=0, max=w)
         boxes[:, 1::2].clamp_(min=0, max=h)
 
+        # Convert data to tensors
         classes = [obj['category_id'] for obj in anno]
         classes = torch.tensor(classes, dtype=torch.int64)
-
         ids = [obj['id'] for obj in anno]
         ids = torch.tensor(ids, dtype=torch.int64)
-
         iou_thresh = [obj['iou_thresh'] for obj in anno]
         iou_thresh = torch.tensor(iou_thresh, dtype=torch.float32)
-
         is_known = [obj['is_known'] for obj in anno]
         is_known = torch.tensor(is_known, dtype=torch.bool)
 
+        # Build mask of valid bboxes to keep
         keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
         boxes = boxes[keep]
 
@@ -166,7 +180,7 @@ class ConvertCoco(object):
         boxes[:, 2] = boxes[:, 2] - boxes[:, 0]
         boxes[:, 3] = boxes[:, 3] - boxes[:, 1]
 
-        # Keep only valid classes
+        # Apply valid bbox keep mask to all data
         classes = classes[keep]
         ids = ids[keep]
         iou_thresh = iou_thresh[keep]

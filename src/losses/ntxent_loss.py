@@ -18,7 +18,6 @@ class SafeMeanReducer(BaseReducer):
             print('WARNING: no losses')
             # Trick to return a tensor with gradient 0 so distributed doesn't break
             return embeddings[0, 0] * 0.0
-        print('Num pos pairs:', n)
         # To compute mean: divide by total before taking sum to avoid overflow (esp. fp16)
         # - may instead result in underflow, but that is less problematic
         loss = (loss_dict['loss']['losses'] / n).sum()
