@@ -141,23 +141,28 @@ def build_resnet(arch='resnet50', pretrained=True,
 # convnext model builder function
 def build_convnext(arch='convnext_base', pretrained=True, freeze_layer1=True):
     # weights
-    if pretrained:
-        weights = torchvision.models.ConvNeXt_Base_Weights.IMAGENET1K_V1
-    else:
-        weights = None
+    weights = None
 
     # load model
     if arch == 'convnext_tiny':
         print('==> Backbone: ConvNext Tiny')
+        if pretrained:
+            weights = torchvision.models.ConvNeXt_Tiny_Weights.IMAGENET1K_V1
         convnext = torchvision.models.convnext_tiny(weights=weights)
     elif arch == 'convnext_small':
         print('==> Backbone: ConvNext Small')
+        if pretrained:
+            weights = torchvision.models.ConvNeXt_Small_Weights.IMAGENET1K_V1
         convnext = torchvision.models.convnext_small(weights=weights)
     elif arch == 'convnext_base':
         print('==> Backbone: ConvNext Base')
+        if pretrained:
+            weights = torchvision.models.ConvNeXt_Base_Weights.IMAGENET1K_V1
         convnext = torchvision.models.convnext_base(weights=weights)
     elif arch == 'convnext_large':
         print('==> Backbone: ConvNext Large')
+        if pretrained:
+            weights = torchvision.models.ConvNeXt_Large_Weights.IMAGENET1K_V1
         convnext = torchvision.models.convnext_large(weights=weights)
     else:
         raise NotImplementedError

@@ -101,6 +101,7 @@ def get_gfn_scores(model, image_lookup, query_embeddings, query_image_feat_list,
         gfn_score_dict = dict(zip(list(image_lookup.keys()), gfn_scores.T.to(device)))
     else:
         gfn_score_dict = None
+        gfn_time_dict = {}
     return gfn_score_dict, gfn_time_dict
 
 
