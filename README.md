@@ -4,12 +4,14 @@ The Object Search Research (OSR) package implements data prep, training, and inf
 CUHK-SYSU and PRW datasets. The package is easily extensible to other datasets.
 
 We achieve state-of-the-art results on the benchmark CUHK-SYSU and PRW datasets, shown below, with
-downloadable model checkpoints.
+downloadable model checkpoints. Metrics are computed with and without the Gallery Filter Network (GFN).
 
-| Dataset   | mAP  | Top-1 | Model                                                        |
-| --------- | ---- | ----- | ------------------------------------------------------------ |
-| CUHK-SYSU | 96.4 | 97.0  | [model](https://drive.google.com/file/d/1wWoQkpWN9-F1i8GqfX26DTf_mRNvxfZH/view?usp=sharing) |
-| PRW       | 58.3 | 92.4  | [model](https://drive.google.com/file/d/17j8rYkcxPx599Eh6T-o6S9WvlRITOPt0/view?usp=sharing) |
+| Dataset   | Backbone      | mAP  | Top-1 | mAP (GFN) | Top-1 (GFN) | Model |
+| --------- | ------------- | ---- | ----- | --------- | ----------- | ----- |
+| PRW       | ConvNeXt Base | 57.6 | 89.5  | 58.3      | 92.4        | [model](https://drive.google.com/file/d/17j8rYkcxPx599Eh6T-o6S9WvlRITOPt0/view?usp=sharing) |
+| PRW       | ResNet50      | 50.8 | 86.0  | 51.3      | 90.6        | --- |
+| CUHK-SYSU | ConvNeXt Base | 96.1 | 96.5  | 96.4      | 97.0        | [model](https://drive.google.com/file/d/1wWoQkpWN9-F1i8GqfX26DTf_mRNvxfZH/view?usp=sharing) |
+| CUHK-SYSU | ResNet50      | 94.1 | 94.7  | 94.7      | 95.3        | --- |
 
 ## Installation
 The OSR package can be installed with docker or conda.
