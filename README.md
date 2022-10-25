@@ -1,4 +1,7 @@
 # Gallery Filter Network for Person Search
+
+[![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/gallery-filter-network-for-person-search/person-search-on-cuhk-sysu)](https://paperswithcode.com/sota/person-search-on-cuhk-sysu?p=gallery-filter-network-for-person-search) [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/gallery-filter-network-for-person-search/person-search-on-prw)](https://paperswithcode.com/sota/person-search-on-prw?p=gallery-filter-network-for-person-search)
+
 This repository implements the models described in the [paper](https://arxiv.org/abs/2210.12903), "Gallery Filter Network for Person Search".
 The Object Search Research (OSR) package implements data prep, training, and inference for the
 CUHK-SYSU and PRW datasets. The package is easily extensible to other datasets.
