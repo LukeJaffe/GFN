@@ -1,5 +1,5 @@
 # Gallery Filter Network for Person Search
-This repository implements the models described in the paper, "Gallery Filter Network for Person Search".
+This repository implements the models described in the [paper](https://arxiv.org/abs/2210.12903), "Gallery Filter Network for Person Search".
 The Object Search Research (OSR) package implements data prep, training, and inference for the
 CUHK-SYSU and PRW datasets. The package is easily extensible to other datasets.
 
@@ -120,3 +120,13 @@ Thanks to the authors of the following repos for their code, which was integral 
 - [torchvision](https://github.com/pytorch/vision)
 - [albumentations](https://github.com/albumentations-team/albumentations)
 - [pytorch_metric_learning](https://github.com/KevinMusgrave/pytorch-metric-learning)
+
+## Citation
+```
+@article{jaffe2022gfn,
+  title={Gallery Filter Network for Person Search},
+  author={Jaffe, Lucas and Zakhor, Avideh},
+  journal={arXiv preprint arXiv:2210.12903}, 
+  year={2022}
+}
+```
