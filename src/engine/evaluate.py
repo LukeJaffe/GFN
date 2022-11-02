@@ -327,11 +327,11 @@ def evaluate_detection_orig(partition_name, detection_lookup, image_lookup, quer
     det_recall = num_gt_match / num_gt_tot
     # Compute AP@0.5
     if len(det_scores_list) > 0:
-        det_scores = torch.cat(det_scores_list)
-        det_matches = torch.cat(det_matches_list)
-        sorted_det_scores, det_scores_idx = torch.sort(det_scores, descending=True)
-        sorted_det_matches = det_matches[det_scores_idx]
-        det_ap = average_precision_score(det_matches.tolist(), det_scores.tolist()) * det_recall
+        ## Combine all scores, labels, and clean any invalid scores
+        det_scores = np.nan_to_num(torch.cat(det_scores_list).tolist(), posinf=0, neginf=0)
+        det_matches = torch.cat(det_matches_list).tolist()
+        ## Compute AP@0.5
+        det_ap = average_precision_score(det_matches, det_scores) * det_recall
     else:
         det_ap = 0
     metric_dict = {
@@ -500,7 +500,10 @@ def evaluate_retrieval_orig(protocol,
                 top1_idx = gallery_sims.argmax()
                 top1 = gallery_matches[top1_idx].item()
                 if gallery_matches.sum().item() > 0:
-                    ap = average_precision_score(gallery_matches.tolist(), gallery_sims.tolist()) * query_recall
+                    ## Compute AP on cleaned input
+                    ap = average_precision_score(gallery_matches.tolist(),
+                        np.nan_to_num(gallery_sims.tolist(), posinf=0, neginf=0)
+                    ) * query_recall
                 else:
                     ap = 0
         else:
@@ -516,7 +519,8 @@ def evaluate_retrieval_orig(protocol,
         if use_gfn:
             ## GFN AP
             if sum(gfn_match_list) > 0:
-                gfn_ap = average_precision_score(gfn_match_list, gfn_score_list)
+                ### Compute AP on cleaned input
+                gfn_ap = average_precision_score(gfn_match_list, np.nan_to_num(gfn_score_list, posinf=0, neginf=0))
             else:
                 gfn_ap = 0
             ## GFN top-1 accuracy
