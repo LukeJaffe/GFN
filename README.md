@@ -110,8 +110,7 @@ osr_run --trial_config=./configs/prw_train_final.yaml
 ```
 
 ## Inference
-Trained model checkpoints are available upon request, but are too large to come with this export. To test, you will
-need to run the training script, then modify the checkpoint path in the test .yaml files to the resulting training checkpoint.
+Trained model checkpoints for the final models are available at the google drive links above in the results table. To test, you may use one of these checkpoints, or run the training script, then modify the checkpoint path in the test .yaml files to the resulting training checkpoint.
 
 To test the final models:
 ```
