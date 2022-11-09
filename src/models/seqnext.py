@@ -25,6 +25,22 @@ from osr.models.gfn import GalleryFilterNetwork
 from osr.losses.oim_loss import OIMLossSafe
 
 
+class SafeBatchNorm1d(torch.nn.BatchNorm1d):
+    """
+    Handles case where batch size is 1.
+    """
+    def forward(self, x):
+        # If batch size is 1, use running batch statistics
+        if (x.size(0) == 1) and self.training:
+            self.eval()
+            y = super().forward(x)
+            self.train()
+        # Otherwise compute statistics for this batch as normal
+        else:
+            y = super().forward(x)
+        return y
+
+
 # Fork of torchvision RPN with safe fp16 loss
 class SafeRegionProposalNetwork(RegionProposalNetwork):
     def __init__(self, *args, **kwargs):
@@ -658,7 +674,7 @@ class NormAwareEmbedding(nn.Module):
         if norm_type == 'layernorm':
             norm_layer = nn.LayerNorm
         elif norm_type == 'batchnorm':
-            norm_layer = nn.BatchNorm1d
+            norm_layer = SafeBatchNorm1d
 
         self.projectors = nn.ModuleDict()
         indv_dims = self._split_embedding_dim()
@@ -745,7 +761,7 @@ class BBoxRegressor(nn.Module):
             if norm_type == 'layernorm':
                 norm_layer = nn.LayerNorm
             elif norm_type == 'batchnorm':
-                norm_layer = nn.BatchNorm1d
+                norm_layer = SafeBatchNorm1d
             self.bbox_pred = nn.Sequential(
                 nn.Linear(in_channels, 4 * num_classes), norm_layer(4 * num_classes)
             )
