@@ -1,0 +1,36 @@
+# Dataset
+dataset: 'prw'
+dataset_dir: '/datasets/prw'
+train_set: 'trainval'
+test_set: 'test'
+retrieval_name_list: ('test',)
+
+# OIM
+oim_cq_size: 500
+
+# Model
+model: 'convnext'
+backbone_arch: 'convnext_base'
+
+# GFN
+gfn_mode:
+    - 'combined'
+    - 'separate'
+gfn_query_mode:
+    - 'batch'
+    - 'oim'
+gfn_scene_pool_size: 56
+
+# Optimization
+epochs: 30
+batch_size: 8
+
+# Augmentation
+aug_mode: 'rrc'
+aug_crop_res: 512
+
+# Logging
+trial_name: 'prw_ablation_objective_base-comb'
+eval_interval: 30
+ckpt_interval: 30
+log_dir: './logging'

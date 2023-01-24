@@ -1,0 +1,164 @@
+# Dataset
+### Name of dataset: {'prw', 'cuhk'}
+dataset: 'cuhk'
+### Path to dataset directory
+dataset_dir: '/datasets/cuhk'
+### Name of train partition
+train_set: 'tinytrainval4'
+### Name of test partition
+test_set: 'tinytrainval4'
+### List of retrieval partitions to use during eval
+retrieval_name_list: ('all',)
+
+# Re-ID Objective: OIM Loss
+### OIM LUT update momentum
+oim_momentum: 0.5
+### Inverse temperature parameter
+oim_scalar: 30.0
+### Size of the OIM circular queue
+oim_cq_size: 5000
+
+# Model
+### Model backbone architecture
+model: 'convnext'
+### Model backbone architecture subvariant
+backbone_arch: 'convnext_base'
+### Use NAE or RCNN head for second stage classification: {'rcnn', 'nae'}
+box_head_mode: 'rcnn'
+### Detection score: which detector stage to use: {'fcs', 'scs'}
+det_score: 'scs'
+### Confidence-weighted similarity: which detector stage to use: {'fcs', 'scs'}
+cws_score: 'scs'
+### Embedding dim for query and scene embeddings
+emb_dim: 2048
+### Normalization to use at end of embedding heads: {'batchnorm', 'layernorm'}
+emb_norm_type: 'batchnorm'
+### Whether to freeze first layer of model backbone
+freeze_layer1: True
+### Whether to freeze batchnorm layers in model backbone
+freeze_backbone_batchnorm: True
+
+# GFN
+### Whether to use the GFN
+use_gfn: True
+### GFN obective: {'image', 'separate', 'combined'}
+#### from paper: image=scene-only, separate=base, combined=combined
+gfn_mode: 'combined'
+### GFN query-scene activation function: {'se', 'sum', 'identity'}
+gfn_activation_mode: 'se'
+### Filtering for negative samples during GFN training 
+gfn_filter_neg: True
+### GFN batch vs. prototype features: {'batch', 'oim'}
+#### from paper: batch=batch, oim=proto
+gfn_query_mode: 'oim'
+### Whether to use a lookup table (LUT) for the GFN
+gfn_use_image_lut: True
+### Temperature to use for GFN NTXentLoss
+gfn_train_temp: 0.1
+### Temperature to use for GFN SE activation
+gfn_se_temp: 0.2
+### Number of (positive, negative) samples for GFN LUT sampling
+gfn_num_sample: (1, 1)
+### Target size for scene features: adaptive max pool 2d
+gfn_scene_pool_size: 56
+
+# Optimization
+### Optimizer and learning rate tuple
+optimizer: ('adam', 1e-4)
+### Learning rate scheduler
+scheduler: 'multistep'
+### Factor by which to reduce LR for 'multistep' scheduler
+lr_gamma: 0.1
+### Steps at which to reduce LR for 'multistep' scheduler
+lr_steps: (15, 25)
+### First epoch LR warmup
+use_warmup: True
+### Automatic mixed precision training / eval
+use_amp: True
+### Clip grads to norm 10.0
+clip_grads: True
+### Number of training epochs
+epochs: 2
+### Number of scenes per training batch
+batch_size: 4
+### Group images into wide vs. tall AR for batches
+aspect_ratio_grouping: False
+### ImageNet stats to use for normalization of images
+image_mean: (0.485, 0.456, 0.406)
+image_std: (0.229, 0.224, 0.225)
+
+# Augmentation
+### RFC+RSC cropping strategy: {'rrc', 'rrc2', 'wrs'}
+aug_mode: 'rrc'
+### Side length of square image crops
+aug_crop_res: 512
+### Random Focused Crop (RFC) probability
+aug_rfc_prob: 1.0
+### Random Safe Crop (RSC) probability
+aug_rsc_prob: 1.0
+### Random Safe Crop erosion rate
+aug_rbsc_er: 0.1
+
+# SeqNeXt
+## RPN
+rpn_pre_nms_topn_train: 12000
+rpn_pre_nms_topn_test: 6000
+rpn_post_nms_topn_train: 2000
+rpn_post_nms_topn_test: 300
+rpn_pos_thresh_train: 0.7
+rpn_neg_thresh_train: 0.3
+rpn_batch_size_train: 256
+rpn_pos_frac_train: 0.5
+rpn_nms_thresh: 0.7
+## RoI Head
+roi_head_pos_thresh_train: 0.5
+roi_head_neg_thresh_train: 0.5
+roi_head_batch_size_train: 128
+roi_head_pos_frac_train: 0.5
+roi_head_score_thresh_test: 0.5
+roi_head_nms_thresh_test: 0.4
+roi_head_detections_per_image_test: 300
+## Loss Weights
+lw_rpn_reg: 1
+lw_rpn_cls: 1
+lw_proposal_reg: 10
+lw_proposal_cls: 1
+lw_box_reg: 1
+lw_box_cls: 1
+lw_box_reid: 1
+
+# Logging
+trial_name: 'dummy'
+eval_interval: 1
+ckpt_interval: 2
+log_dir: './logging'
+ckpt_path: null
+print_freq: 20
+
+# Run mode
+debug: False
+test_only: False
+
+# Computation
+## torch
+device: 'cuda'
+workers: 4
+## Ray
+num_samples: 1
+num_workers: 1
+num_cpus_per_trial: 4
+num_gpus_per_trial: 1
+resume: False
+
+# Reproducibility
+use_random_seed: True
+random_seed: 0
+
+# Keys which should be parsed as tuples
+tuple_key_list:
+    - gfn_num_sample
+    - optimizer
+    - lr_steps
+    - retrieval_name_list
+    - image_mean
+    - image_std
