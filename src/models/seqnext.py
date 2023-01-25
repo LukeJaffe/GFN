@@ -15,6 +15,9 @@ from torchvision.models.detection.roi_heads import RoIHeads
 from torchvision.models.detection.rpn import AnchorGenerator, RegionProposalNetwork, RPNHead
 from torchvision.ops import MultiScaleRoIAlign
 from torchvision.ops import boxes as box_ops
+# typing
+from typing import Dict, Tuple, List, Any, Optional
+from torch import Tensor
 
 # Package imports
 ## Models
@@ -25,20 +28,57 @@ from osr.models.gfn import GalleryFilterNetwork
 from osr.losses.oim_loss import OIMLossSafe
 
 
-class SafeBatchNorm1d(torch.nn.BatchNorm1d):
+class SafeBatchNorm1d(nn.BatchNorm1d):
     """
     Handles case where batch size is 1.
     """
-    def forward(self, x):
-        # If batch size is 1, use running batch statistics
-        if (x.size(0) == 1) and self.training:
-            self.eval()
-            y = super().forward(x)
-            self.train()
-        # Otherwise compute statistics for this batch as normal
+    def forward(self, input: Tensor) -> Tensor:
+        self._check_input_dim(input)
+
+        # exponential_average_factor is set to self.momentum
+        # (when it is available) only so that it gets updated
+        # in ONNX graph when this node is exported to ONNX.
+        if self.momentum is None:
+            exponential_average_factor = 0.0
         else:
-            y = super().forward(x)
-        return y
+            exponential_average_factor = self.momentum
+
+        if self.training and self.track_running_stats:
+            # TODO: if statement only here to tell the jit to skip emitting this when it is None
+            if self.num_batches_tracked is not None:  # type: ignore[has-type]
+                self.num_batches_tracked.add_(1)  # type: ignore[has-type]
+                if self.momentum is None:  # use cumulative moving average
+                    exponential_average_factor = 1.0 / float(self.num_batches_tracked)
+                else:  # use exponential moving average
+                    exponential_average_factor = self.momentum
+
+        r"""
+        Decide whether the mini-batch stats should be used for normalization rather than the buffers.
+        Mini-batch stats are used in training mode, and in eval mode when buffers are None.
+        """
+        if self.training and (input.size(0)>1):
+            bn_training = True
+        else:
+            bn_training = (self.running_mean is None) and (self.running_var is None)
+
+        r"""
+        Buffers are only updated if they are to be tracked and we are in training mode. Thus they only need to be
+        passed when the update should occur (i.e. in training mode when they are tracked), or when buffer stats are
+        used for normalization (i.e. in eval mode when buffers are not None).
+        """
+        return F.batch_norm(
+            input,
+            # If buffers are not to be tracked, ensure that they won't be updated
+            self.running_mean
+            if (not self.training or self.track_running_stats or input.size(0)==1)
+            else None,
+            self.running_var if (not self.training or self.track_running_stats or input.size(0)==1) else None,
+            self.weight,
+            self.bias,
+            bn_training,
+            exponential_average_factor,
+            self.eps,
+        )
 
 
 # Fork of torchvision RPN with safe fp16 loss
@@ -46,7 +86,8 @@ class SafeRegionProposalNetwork(RegionProposalNetwork):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def compute_loss(self, objectness, pred_bbox_deltas, labels, regression_targets):
+    def compute_loss(self, objectness: Tensor, pred_bbox_deltas: Tensor,
+            labels: List[Tensor], regression_targets: List[Tensor]) -> Tuple[Tensor, Tensor]:
         """
         Args:
             objectness (Tensor)
@@ -88,7 +129,7 @@ class SafeRegionProposalNetwork(RegionProposalNetwork):
 # SeqNeXt module
 class SeqNeXt(nn.Module):
     def __init__(self, config, oim_lut_size=None, device='cpu'):
-        super(SeqNeXt, self).__init__()
+        super().__init__()
 
         #
         self.device = device
@@ -99,10 +140,12 @@ class SeqNeXt(nn.Module):
 
         # Backbone model
         if config['model'] == 'resnet':
-            backbone, prop_head = build_resnet(arch=config['backbone_arch'], pretrained=True,
+            backbone, prop_head = build_resnet(arch=config['backbone_arch'],
+                pretrained=config['pretrained'],
                 freeze_backbone_batchnorm=config['freeze_backbone_batchnorm'], freeze_layer1=config['freeze_layer1'])
         elif config['model'] == 'convnext':
-            backbone, prop_head = build_convnext(arch=config['backbone_arch'], pretrained=True,
+            backbone, prop_head = build_convnext(arch=config['backbone_arch'],
+                pretrained=config['pretrained'],
                 freeze_layer1=config['freeze_layer1'])
         else:
             raise NotImplementedError
@@ -159,7 +202,7 @@ class SeqNeXt(nn.Module):
                 norm_type=config['emb_norm_type'])
         if config['box_head_mode'] == 'rcnn':
             embedding_head.rescaler = None
-            box_predictor = None
+            box_predictor = lambda x: None
         else:
             box_predictor = BBoxRegressor(box_channels, num_classes=2, bn_neck=False,
                 norm_type=config['emb_norm_type'])
@@ -242,20 +285,15 @@ class SeqNeXt(nn.Module):
         self.lw_box_reid = config['lw_box_reid']
 
 
-    def inference(self, images, targets=None, query_img_as_gallery=False, inference_mode=None):
-        """
-        query_img_as_gallery: Set to True to detect all people in the query image.
-            Meanwhile, the gt box should be the first of the detected boxes.
-            This option serves CBGM (not implemented for SeqNeXt).
-        """
-        original_image_sizes = [img.shape[-2:] for img in images]
-        t0 = time.time()
+    def inference(self, images: List[Tensor], targets:Optional[List[Dict[str, Tensor]]]=None, inference_mode:str='both') -> Tuple[List[Dict[str, Tensor]], List[Tensor], Optional[Tensor]]:
+        original_image_sizes = [(img.shape[-2], img.shape[-1]) for img in images]
+        #t0 = time.time()
         images, targets = self.transform(images, targets)
-        t1 = time.time()
+        #t1 = time.time()
         bb_features = self.backbone(images.tensors)
 
         # Get image features from the GFN
-        t2 = time.time()
+        #t2 = time.time()
         if self.use_gfn:
             scene_emb = self.gfn.get_scene_emb(bb_features)
         else:
@@ -264,49 +302,46 @@ class SeqNeXt(nn.Module):
         #
         reid_features = bb_features
 
-        if query_img_as_gallery:
-            assert targets is not None
-
-        detections, embeddings = None, None
-        t3 = time.time()
-        if (inference_mode in ('gt', 'both')) and (targets is not None) and (not query_img_as_gallery):
+        detections, embeddings = [{}], [torch.empty(0)]
+        #t3 = time.time()
+        if (inference_mode in ('gt', 'both')) and (targets is not None):
             # query
             boxes = [t["boxes"] for t in targets]
             box_features = self.roi_heads.reid_roi_pool(reid_features, boxes, images.image_sizes)
             box_features = self.roi_heads.reid_head(box_features)
-            embeddings, _ = self.roi_heads.embedding_head(box_features)
-            embeddings = embeddings.split(1, 0)
-        t4 = time.time()
-        if (inference_mode in ('det', 'both')) or ((inference_mode in ('gt', 'both')) and query_img_as_gallery):
+            _embeddings, _ = self.roi_heads.embedding_head(box_features)
+            embeddings = _embeddings.split(1, 0)
+        #t4 = time.time()
+        if (inference_mode in ('det', 'both')) or (inference_mode in ('gt', 'both')):
             # gallery
             rpn_features = bb_features
             proposals, _ = self.rpn(images, rpn_features, targets)
-            t5 = time.time()
+            #t5 = time.time()
             detections, _ = self.roi_heads(
-                bb_features, proposals, images.image_sizes, targets, query_img_as_gallery
+                bb_features, proposals, images.image_sizes, targets
             )
-            t6 = time.time()
+            #t6 = time.time()
             detections = self.transform.postprocess(
                 detections, images.image_sizes, original_image_sizes
             )
-            t7 = time.time()
+            #t7 = time.time()
         #
         time_dict = {
             #'transform': t1-t0, # negligible
-            'backbone': t2-t1,
-            'scene_feat': t3-t2,
-            'query_feat': t4-t3,
-            'rpn_det': t5-t4,
-            'roi_det': t6-t5,
+            #'backbone': t2-t1,
+            #'scene_feat': t3-t2,
+            #'query_feat': t4-t3,
+            #'rpn_det': t5-t4,
+            #'roi_det': t6-t5,
             #'postprocess': t7-t6, # negligible
         }
 
-        return detections, embeddings, scene_emb, time_dict
+        return detections, embeddings, scene_emb
 
 
-    def forward(self, images, targets=None, query_img_as_gallery=False, inference_mode=None, **kwargs):
+    def forward(self, images: List[Tensor], targets:Optional[List[Dict[str, Tensor]]]=None, inference_mode:str='both') -> Tuple[List[Dict[str, Tensor]], List[Tensor], Optional[Tensor]]:
         if not self.training:
-            return self.inference(images, targets, query_img_as_gallery, inference_mode=inference_mode)
+            return self.inference(images, targets, inference_mode=inference_mode)
 
         images, targets = self.transform(images, targets)
         bb_features = self.backbone(images.tensors)
@@ -376,7 +411,7 @@ class SeqRoIHeads(RoIHeads):
         self.reid_roi_pool = reid_roi_pool
         self.prop_head = prop_head
         # rename the method inherited from parent class
-        self.postprocess_proposals = self.postprocess_detections
+        #self.postprocess_proposals = self.postprocess_detections
         self.num_pids = num_pids
         self.emb_dim = emb_dim
         self.gfn = gfn
@@ -386,7 +421,8 @@ class SeqRoIHeads(RoIHeads):
         if self.box_head_mode == 'rcnn':
             self.score_predictor = FastRCNNPredictor(box_channels, 1)
 
-    def forward(self, bb_features, proposals, image_shapes, targets=None, query_img_as_gallery=False):
+    def forward(self, bb_features: Dict[str, Tensor], proposals: List[Tensor],
+        image_shapes: List[Tuple[int, int]], targets:Optional[List[Dict[str, Tensor]]]=None) -> Tuple[List[Dict[str, Tensor]], Dict[str, Tensor]]:
         """
         Arguments:
             features (List[Tensor])
@@ -398,10 +434,15 @@ class SeqRoIHeads(RoIHeads):
             proposals, _, proposal_pid_labels, proposal_reg_targets = self.select_training_samples(
                 proposals, targets
             )
+        else:
+            proposal_pid_labels = []
+            proposal_reg_targets = [torch.empty(0)]
 
         reg_proposals = proposals
         if self.training:
             proposal_labels = [y.clamp(0, 1) for y in proposal_pid_labels]
+        else:
+            proposal_labels = [torch.empty(0)]
 
         # ------------------- Faster R-CNN head ------------------ #
         prop_features = bb_features
@@ -417,40 +458,34 @@ class SeqRoIHeads(RoIHeads):
             boxes, box_img_ids, box_pid_labels, box_reg_targets = self.select_training_samples(boxes, targets)
         else:
             # invoke the postprocess method inherited from parent class to process proposals
-            boxes, scores, _ = self.postprocess_proposals(
+            boxes, scores, _ = self.postprocess_detections(
                 proposal_cls_scores, proposal_regs, proposals, image_shapes
             )
+            box_pid_labels = [torch.empty(0)]
+            box_reg_targets = [torch.empty(0)]
 
         cws = True
         gt_det = None
-        if not self.training and query_img_as_gallery:
-            # When regarding the query image as gallery, GT boxes may be excluded
-            # from detected boxes. To avoid this, we compulsorily include GT in the
-            # detection results. Additionally, CWS should be disabled as the
-            # confidences of these people in query image are 1
-            cws = False
-            gt_box = [targets[0]["boxes"]]
-            reid_features = bb_features
-            gt_box_features = self.reid_roi_pool(reid_features, gt_box, image_shapes)
-            gt_box_features = self.reid_head(gt_box_features)
-            embeddings, _ = self.embedding_head(gt_box_features)
-            gt_det = {"boxes": targets[0]["boxes"], "embeddings": embeddings}
 
         # no detection predicted by Faster R-CNN head in test phase
         if boxes[0].shape[0] == 0:
             assert not self.training
             device = boxes[0].device
-            boxes = gt_det["boxes"] if gt_det else torch.zeros(0, 4).to(device)
-            labels = torch.ones(1).type_as(boxes) if gt_det else torch.zeros(0).to(device)
-            scores = torch.ones(1).type_as(boxes) if gt_det else torch.zeros(0).to(device)
-            embeddings = gt_det["embeddings"] if gt_det else torch.zeros(0, self.emb_dim).to(device)
-            return [dict(boxes=boxes, labels=labels, scores=scores, embeddings=embeddings)], []
+            boxes = [torch.zeros(0, 4).to(device)]
+            labels = [torch.zeros(0).to(device)]
+            scores = [torch.zeros(0).to(device)]
+            embeddings = [torch.zeros(0, self.emb_dim).to(device)]
+            return [dict(boxes=torch.cat(boxes), labels=torch.cat(labels), scores=torch.cat(scores), embeddings=torch.cat(embeddings))], {}
+        else:
+            scores = [torch.empty(0)]
 
         # --------------------- Baseline head -------------------- #
         ###
         reg_boxes = boxes
         if self.training:
             box_labels = [y.clamp(0, 1) for y in box_pid_labels]
+        else:
+            box_labels = [torch.empty(0)]
 
         ###
         box_features = self.box_roi_pool(bb_features, reg_boxes, image_shapes)
@@ -461,12 +496,13 @@ class SeqRoIHeads(RoIHeads):
             box_cls_scores = box_cls_scores.squeeze(1)
             box_regs = box_regs.repeat(1, 2)
         else:
-            box_regs = self.box_predictor(box_features[self.box_head.featmap_names[-1]])
+            #box_regs = self.box_predictor(box_features[self.box_head.featmap_names[-1]])
+            raise Exception
 
         if box_cls_scores.dim() == 0:
             box_cls_scores = box_cls_scores.unsqueeze(0)
 
-        result, losses = [], {}
+        result, losses = [{}], {}
         if self.training:
             # Detection losses
             losses = detection_losses(
@@ -481,16 +517,17 @@ class SeqRoIHeads(RoIHeads):
             )
 
             # Reid loss
-            box_pid_labels = torch.cat(box_pid_labels)
-            fg_mask = box_pid_labels > 0 
+            _box_pid_labels = torch.cat(box_pid_labels)
+            fg_mask = _box_pid_labels > 0 
             fg_box_embeddings = box_embeddings[fg_mask]
 
             ## GFN
-            query_labels = box_pid_labels[fg_mask]-1
+            query_labels = _box_pid_labels[fg_mask]-1
             query_feats = fg_box_embeddings
             ## Compute re-id loss
             sim_loss = self.reid_loss(query_feats, query_labels)
-            losses.update(sim_loss=sim_loss)
+            losses['sim_loss'] = sim_loss
+            #losses.update(sim_loss=sim_loss)
         else:
             # The IoUs of these boxes are higher than that of proposals,
             # so a higher NMS threshold is needed
@@ -509,15 +546,15 @@ class SeqRoIHeads(RoIHeads):
             # set to original thresh after finishing postprocess
             self.nms_thresh = orig_thresh
             num_images = len(boxes)
+            result = [{} for i in range(num_images)]
             for i in range(num_images):
-                result.append(
-                    dict(
-                        boxes=boxes[i], labels=labels[i], scores=scores[i], embeddings=embeddings[i]
-                    )
+                result[i] = dict(
+                    boxes=boxes[i], labels=labels[i],
+                    scores=scores[i], embeddings=embeddings[i]
                 )
         return result, losses
 
-    def get_boxes(self, box_regression, proposals, image_shapes):
+    def get_boxes(self, box_regression: Tensor, proposals: List[Tensor], image_shapes: List[Tuple[int, int]]) -> List[Tensor]:
         """
         Get boxes from proposals.
         """
@@ -536,14 +573,14 @@ class SeqRoIHeads(RoIHeads):
 
     def postprocess_boxes(
         self,
-        class_logits,
-        box_regression,
-        embeddings,
-        proposals,
-        image_shapes,
-        fcs=None,
-        gt_det=None,
-        cws=True,
+        class_logits: Tensor,
+        box_regression: Tensor,
+        embeddings: Tensor,
+        proposals: List[Tensor],
+        image_shapes: List[Tuple[int, int]],
+        fcs:List[Tensor],
+        gt_det:Optional[Dict[str, Tensor]]=None,
+        cws:bool=True,
     ):
         """
         Similar to RoIHeads.postprocess_detections, but can handle embeddings and implement
@@ -567,6 +604,8 @@ class SeqRoIHeads(RoIHeads):
         elif self.det_score == 'scs':
             # Second Classification Score (SCS)
             pred_scores = scs_scores
+        else:
+            raise Exception
 
         # Which stage to use for detector scores
         if self.cws_score == 'fcs':
@@ -578,6 +617,8 @@ class SeqRoIHeads(RoIHeads):
         elif self.cws_score == 'none':
             # Second Classification Score (SCS)
             cws_scores = torch.ones_like(pred_scores).view(-1, 1)
+        else:
+            raise Exception
 
         # Whether to weight embeddings by the detector scores
         if cws:
@@ -689,7 +730,7 @@ class NormAwareEmbedding(nn.Module):
         # Affine True by default for both BatchNorm1d, LayerNorm
         self.rescaler = norm_layer(1)
 
-    def forward(self, featmaps):
+    def forward(self, featmaps: Dict[str, Tensor]):
         """
         Arguments:
             featmaps: OrderedDict[Tensor], and in featmap_names you can choose which
@@ -698,11 +739,15 @@ class NormAwareEmbedding(nn.Module):
             tensor of size (BatchSize, dim), L2 normalized embeddings.
             tensor of size (BatchSize, ) rescaled norm of embeddings, as class_logits.
         """
+        embeddings = torch.empty(0)
         assert len(featmaps) == len(self.featmap_names)
         if len(featmaps) == 1:
-            k, v = list(featmaps.items())[0]
-            v = self._flatten_fc_input(v)
-            embeddings = self.projectors[k](v)
+            fk, fv = list(featmaps.items())[0]
+            fv = self._flatten_fc_input(fv)
+            ## Loop for torch.jit
+            for pk, pv in self.projectors.items():
+                if pk == fk:
+                    embeddings = pv(fv)
             norms = embeddings.norm(2, 1, keepdim=True)
             embeddings = embeddings / norms.expand_as(embeddings).clamp(min=1e-12)
             if self.rescaler is None:
@@ -712,9 +757,12 @@ class NormAwareEmbedding(nn.Module):
             return embeddings, norms
         else:
             outputs = []
-            for k, v in featmaps.items():
-                v = self._flatten_fc_input(v)
-                outputs.append(self.projectors[k](v))
+            for fk, fv in featmaps.items():
+                fv = self._flatten_fc_input(fv)
+                ## Loop for torch.jit
+                for pk, pv in self.projectors.items():
+                    if pk == fk:
+                        outputs.append(pv(fv))
             embeddings = torch.cat(outputs, dim=1)
             norms = embeddings.norm(2, 1, keepdim=True)
             embeddings = embeddings / norms.expand_as(embeddings).clamp(min=1e-12)
@@ -725,7 +773,7 @@ class NormAwareEmbedding(nn.Module):
             return embeddings, norms
 
     def _flatten_fc_input(self, x):
-        if x.ndimension() == 4:
+        if len(x.shape) == 4:
             assert list(x.shape[2:]) == [1, 1]
             return x.flatten(start_dim=1)
         return x
@@ -755,7 +803,7 @@ class BBoxRegressor(nn.Module):
             num_classes (int, optional): Defaults to 2 (background and pedestrian).
             bn_neck (bool, optional): Whether to use BN after Linear. Defaults to True.
         """
-        super(BBoxRegressor, self).__init__()
+        super().__init__()
         self.in_channels = in_channels
         if bn_neck:
             if norm_type == 'layernorm':
@@ -774,8 +822,8 @@ class BBoxRegressor(nn.Module):
             init.normal_(self.bbox_pred.weight, std=0.01)
             init.constant_(self.bbox_pred.bias, 0)
 
-    def forward(self, x):
-        if x.ndimension() == 4:
+    def forward(self, x: Tensor) -> Tensor:
+        if len(x.shape) == 4:
             if list(x.shape[2:]) != [1, 1]:
                 x = F.adaptive_avg_pool2d(x, output_size=1)
         x = x.flatten(start_dim=1)
@@ -784,15 +832,15 @@ class BBoxRegressor(nn.Module):
 
 
 def detection_losses(
-    proposal_cls_scores,
-    proposal_regs,
-    proposal_labels,
-    proposal_reg_targets,
-    box_cls_scores,
-    box_regs,
-    box_labels,
-    box_reg_targets,
-):
+    proposal_cls_scores: Tensor,
+    proposal_regs: Tensor,
+    proposal_labels: List[Tensor],
+    proposal_reg_targets: List[Tensor],
+    box_cls_scores: Tensor,
+    box_regs: Tensor,
+    box_labels: List[Tensor],
+    box_reg_targets: List[Tensor],
+) -> Dict[str, Tensor]:
     proposal_labels = torch.cat(proposal_labels, dim=0)
     box_labels = torch.cat(box_labels, dim=0)
     proposal_reg_targets = torch.cat(proposal_reg_targets, dim=0)

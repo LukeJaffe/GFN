@@ -10,6 +10,8 @@ from sklearn.metrics import average_precision_score
 from tqdm import tqdm
 from ray.tune.integration.torch import is_distributed_trainable
 from torchvision.ops import boxes as box_ops
+# Package imports
+from osr.engine import utils as engine_utils
 
 
 # Define objects to neatly store results
@@ -40,14 +42,6 @@ RetrievalBox = collections.namedtuple('RetrievalBox',
     defaults=[None, None, None, None, None],
 )
 
-
-# Helper function to move data to GPU
-def to_device(images, targets, device):
-    images = [image.to(device) for image in images]
-    for t in targets:
-        t["boxes"] = t["boxes"].to(device)
-        t["labels"] = t["labels"].to(device)
-    return images, targets
 
 
 # Get retrieval protocol information
@@ -97,12 +91,12 @@ def get_gfn_scores(model, image_lookup, query_embeddings, query_image_feat_list,
         else:
             gfn = model.gfn
         ## Get scores
-        gfn_scores, gfn_time_dict = gfn.get_scores(query_embeddings, query_img_feat_mat, gallery_img_feat_mat)
+        gfn_scores = gfn.get_scores(query_embeddings, query_img_feat_mat, gallery_img_feat_mat)
+        print(gfn_scores.min(), gfn_scores.max())
         gfn_score_dict = dict(zip(list(image_lookup.keys()), gfn_scores.T.to(device)))
     else:
         gfn_score_dict = None
-        gfn_time_dict = {}
-    return gfn_score_dict, gfn_time_dict
+    return gfn_score_dict
 
 
 def run_model(model, data_loader, use_amp=False, device='cuda'):
@@ -112,12 +106,9 @@ def run_model(model, data_loader, use_amp=False, device='cuda'):
         image_lookup = {}
         query_lookup = {}
         detection_lookup = {}
-        time_dict = collections.defaultdict(list)
         for iter_idx, (images, targets) in tqdm(enumerate(data_loader), ncols=0, total=len(data_loader)):
-            images, targets = to_device(images, targets, device)
-            detections, embeddings, scene_emb, _time_dict = model(images, targets, inference_mode='both')
-            for k,v in _time_dict.items():
-                time_dict[k].append(v)
+            images, targets = engine_utils.to_device(images, targets, device)
+            detections, embeddings, scene_emb = model(images, targets, inference_mode='both')
             embeddings = torch.cat(embeddings)
             assert len(targets) == len(detections)
             # XXX
@@ -136,7 +127,7 @@ def run_model(model, data_loader, use_amp=False, device='cuda'):
                         query_lookup[_id] = QueryLookupEntry(image_id=image_id, person_id=_person_id,
                             embedding=_embedding, box=_box)
     #
-    return query_lookup, image_lookup, detection_lookup, time_dict
+    return query_lookup, image_lookup, detection_lookup
 
 
 @torch.no_grad()
@@ -145,21 +136,18 @@ def get_model_output(model, data_loader, use_gfn=False, use_amp=False, device='c
     model.eval()
 
     # Compute and gather detections and ground truth embeddings
-    query_lookup, image_lookup, detection_lookup, model_time_dict = run_model(model, data_loader,
+    query_lookup, image_lookup, detection_lookup = run_model(model, data_loader,
         use_amp=use_amp, device=device)
 
     # Combine all query embeddings into a single tensor for easy computation of cosine similarity
     query_embeddings, query_image_feat_list = get_query_embeddings(query_lookup, image_lookup)
 
     # Compute GFN scores
-    gfn_score_dict, gfn_time_dict = get_gfn_scores(model, image_lookup, query_embeddings, query_image_feat_list,
+    gfn_score_dict = get_gfn_scores(model, image_lookup, query_embeddings, query_image_feat_list,
         use_gfn=use_gfn, device=device)
 
-    # Combine time metadata
-    time_dict = {**model_time_dict, **gfn_time_dict}
-
     # Return results
-    return query_lookup, query_embeddings, image_lookup, detection_lookup, gfn_score_dict, time_dict 
+    return query_lookup, query_embeddings, image_lookup, detection_lookup, gfn_score_dict
 
 
 @torch.no_grad()
@@ -169,7 +157,7 @@ def evaluate_performance(
     report_timing=False,
 ):
     # Get model output
-    query_lookup, query_embeddings, image_lookup, detection_lookup, gfn_score_dict, time_dict = get_model_output(model, data_loader,
+    query_lookup, query_embeddings, image_lookup, detection_lookup, gfn_score_dict = get_model_output(model, data_loader,
         use_gfn=use_gfn, use_amp=use_amp, device=device)
 
     # Dicts to store results
@@ -208,31 +196,6 @@ def evaluate_performance(
             metric_dict.update(retrieval_metric_dict)
             value_dict.update(gt_retrieval_value_dict)
             value_dict.update(retrieval_value_dict)
-
-    # Report time info
-    if report_timing:
-        time_sum_dict = {}
-        ## Mean time per module
-        print('\n==> Mean computation times:')
-        for k, v_list in time_dict.items():
-            ## Backbone has a cold start cost so we skip the first element
-            print('{}: {:.1f}'.format(k, np.mean(v_list[1:]) * 1000.0))
-            time_sum_dict[k] = np.sum(v_list[1:])
-        ## % time per module
-        print('\n==> % computation times:')
-        tot_time = sum(time_sum_dict.values())
-        for k, v in time_sum_dict.items():
-            print('{}: {:.1f}'.format(k, (v / tot_time) * 100.0))
-        ## summary
-        time_summary_dict = {
-            'shared': time_sum_dict['backbone'] + time_sum_dict['query_feat'],
-            'gfn': time_sum_dict['scene_feat'] + time_sum_dict['gfn_scores'],
-            'detector': time_sum_dict['rpn_det'] + time_sum_dict['roi_det'],
-        }
-        print('\n==> % summary times:')
-        tot_time = sum(time_summary_dict.values())
-        for k, v in time_summary_dict.items():
-            print('{}: {:.1f}'.format(k, (v / tot_time) * 100.0))
 
     # Report metrics 
     print('\n==> Full metrics:')

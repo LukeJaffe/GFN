@@ -7,6 +7,9 @@ import torch.nn.functional as F
 import torchvision
 from torchvision.models._utils import IntermediateLayerGetter
 from torchvision.ops import misc as misc_nn_ops
+## Types
+from typing import Dict
+from torch import Tensor
 
 
 # Legacy resnet50 backbone
@@ -56,11 +59,11 @@ class Backbone(nn.Module):
 
 # Generic Head
 class Head(nn.Module):
-    def forward(self, x):
+    def forward(self, x) -> Dict[str, Tensor]:
         feat = self.head(x)
         x = torch.amax(x, dim=(2, 3), keepdim=True)
         feat = torch.amax(feat, dim=(2, 3), keepdim=True)
-        return OrderedDict([["feat_res4", x], ["feat_res5", feat]])
+        return {"feat_res4": x, "feat_res5": feat}
 
 
 # Resnet Backbone

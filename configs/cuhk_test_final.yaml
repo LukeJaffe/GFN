@@ -11,6 +11,7 @@ oim_cq_size: 5000
 # Model
 model: 'convnext'
 backbone_arch: 'convnext_base'
+pretrained: False
 
 # GFN
 gfn_mode: 'combined'
@@ -33,4 +34,4 @@ trial_name: 'cuhk_final'
 eval_interval: 30
 ckpt_interval: 30
 log_dir: './logging'
-ckpt_path: './ckpt/cuhk_final_convnext-base_e30.pkl'
+ckpt_path: './ckpt/cuhk_final_convnext-base_e30.pt'

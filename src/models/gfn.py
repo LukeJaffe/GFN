@@ -8,6 +8,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+## typing
+from typing import Dict
+from torch import Tensor
 
 # Package imports
 from osr.losses.ntxent_loss import SafeNTXentLoss
@@ -21,7 +24,7 @@ class ScenePool(nn.Module):
         self.featmap_name = featmap_name
         self.output_size = output_size
 
-    def forward(self, x):
+    def forward(self, x: Dict[str, Tensor]):
         f = x[self.featmap_name]
         p = F.adaptive_max_pool2d(f, self.output_size)
         return p
@@ -38,7 +41,7 @@ class SceneEmbeddingHead(nn.Module):
         ## We don't use NAE embedding norms for the scene embeddings
         self.image_emb_head.rescaler = None
 
-    def forward(self, x):
+    def forward(self, x: Dict[str, Tensor]):
         x = self.image_roi_pool(x)
         x = self.image_reid_head(x)
         x = self.image_emb_head(x)[0]
@@ -51,7 +54,7 @@ class BatchNorm1d(nn.Module):
         super(BatchNorm1d, self).__init__()
         self.norm = nn.BatchNorm1d(d)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         ## if len(shape) == 2, apply norm directly
         if len(x.size()) == 2:
             return self.norm(x)
@@ -59,6 +62,8 @@ class BatchNorm1d(nn.Module):
         elif len(x.size()) == 3:
             i, q, d = x.size()
             return self.norm(x.reshape(-1, d)).reshape(i, q, d)
+        else:
+            raise Exception
 
 
 # Module to fuse query and scene features
@@ -72,23 +77,24 @@ class QueryImageFuser(nn.Module):
         if self.gfn_activation_mode != 'identity':
             self.norm = BatchNorm1d(d)
 
-    def se(self, x, y, p=False):
+    def se(self, x: Tensor, y: Tensor, p:bool=False) -> Tensor:
         if p:
             return y.unsqueeze(1) * torch.sigmoid(x.unsqueeze(0) / self.se_temp)
         else:
             return y * torch.sigmoid(x / self.se_temp)
 
-    def forward(self, x, y, p=False):
+    def forward(self, x: Tensor, y: Tensor, p:bool=False) -> Tensor:
         """
         x: query features
         y: scene features
         """
+        z = torch.empty(0)
         # Apply fuser function
         ## sigmoidal excitation of scene features using query features
         if self.gfn_activation_mode == 'se':
             z = self.norm(self.se(
-                F.normalize(x, p=2, dim=-1), 
-                F.normalize(y, p=2, dim=-1), 
+                F.normalize(x, p=2.0, dim=-1), 
+                F.normalize(y, p=2.0, dim=-1), 
                 p=p))
         ## add query and scene features
         elif self.gfn_activation_mode == 'sum':
@@ -121,18 +127,19 @@ class GalleryFilterNetwork(nn.Module):
         self.query_reid_head = reid_head
         self.query_emb_head = emb_head
         self.head = SceneEmbeddingHead(reid_head, emb_head, pool_size=gfn_scene_pool_size)
-        self.mode = mode
-        if self.mode not in  ('image', 'separate'):
+        self.gfn_mode = mode
+        if self.gfn_mode not in  ('image', 'separate'):
             self.fuser = QueryImageFuser(emb_dim,
                 gfn_query_mode=gfn_query_mode, gfn_activation_mode=gfn_activation_mode, se_temp=se_temp)
         self.filter_neg = filter_neg
         self.fuse_batch_size = fuse_batch_size
-        self.criterion = SafeNTXentLoss(temperature=temp)
+        self.criterion = None
         self.use_image_lut = use_image_lut
         self.image_lut = {}
         self.pos_num_sample = pos_num_sample
         self.neg_num_sample = neg_num_sample
         self.device = device
+        self.ntx_temp = temp
 
         # Set up gfn_query_mode params
         self.reid_loss = reid_loss
@@ -140,14 +147,15 @@ class GalleryFilterNetwork(nn.Module):
             ## need to use reid_loss here, otherwise pointer to reid_loss.lut gets lost
             self.query_unk = reid_loss.ignore_index
 
-    def get_scene_emb(self, features):
+
+    def get_scene_emb(self, features: Dict[str, Tensor]) -> Tensor:
         scene_emb = self.head(features)
         return scene_emb
 
     def get_fused_features(self, query_features, query_image_features=None, gallery_image_features=None):
         # For 'separate' mode, we don't need to fuse features
-        assert self.mode != 'separate'
-        if self.mode == 'combined':
+        assert self.gfn_mode != 'separate'
+        if self.gfn_mode == 'combined':
             Q, D = query_features.size()
             I = gallery_image_features.size(0)
             fused_features_list = []
@@ -163,16 +171,16 @@ class GalleryFilterNetwork(nn.Module):
             fused_features = fused_query_features, fused_gallery_features 
         return fused_features
 
-    def get_scores(self, source_box_feats, source_img_feats, target_img_feats):
-        t0 = time.time()
+    @torch.jit.export
+    def get_scores(self, source_box_feats: Tensor, source_img_feats: Tensor, target_img_feats: Tensor) -> Tensor:
         ## Leave source and target img feats alone
-        if self.mode == 'separate':
+        if self.gfn_mode == 'separate':
             gfn_scores = torch.sigmoid(torch.mm(
-                F.normalize(source_box_feats, p=2, dim=-1),
-                F.normalize(target_img_feats, p=2, dim=-1).T,
+                F.normalize(source_box_feats, p=2.0, dim=-1),
+                F.normalize(target_img_feats, p=2.0, dim=-1).T,
             ))
         ## Combine source box feats into source img feats and target img feats
-        elif self.mode == 'combined':
+        elif self.gfn_mode == 'combined':
             query_features, query_image_features, gallery_image_features = source_box_feats, source_img_feats, target_img_feats
             fused_query_features = self.fuser(query_features, query_image_features)
             #
@@ -180,25 +188,26 @@ class GalleryFilterNetwork(nn.Module):
             for _gallery_image_features in gallery_image_features.split(self.fuse_batch_size):
                 _alt_fused_features = self.fuser(query_features, _gallery_image_features, p=True)
                 _gfn_scores = torch.sigmoid(torch.einsum('qd,iqd->qi',
-                    F.normalize(fused_query_features.float(), p=2, dim=-1),
-                    F.normalize(_alt_fused_features.float(), p=2, dim=-1),
+                    F.normalize(fused_query_features.float(), p=2.0, dim=-1),
+                    F.normalize(_alt_fused_features.float(), p=2.0, dim=-1),
                 ))
                 gfn_scores_list.append(_gfn_scores.cpu())
             gfn_scores = torch.cat(gfn_scores_list, dim=1)
         ## Use image feats only
-        elif self.mode == 'image':
+        elif self.gfn_mode == 'image':
             gfn_scores = torch.sigmoid(torch.einsum('sd,td->st',
-                F.normalize(source_img_feats.float(), p=2, dim=-1),
-                F.normalize(target_img_feats.float(), p=2, dim=-1),
+                F.normalize(source_img_feats.float(), p=2.0, dim=-1),
+                F.normalize(target_img_feats.float(), p=2.0, dim=-1),
             ))
-        #
-        t1 = time.time()
-        time_dict = {
-            'gfn_scores': [0, t1 - t0],
-        }
-        return gfn_scores, time_dict
+        else:
+            raise Exception
+        return gfn_scores
 
+    @torch.jit.ignore
     def forward(self, features, targets, image_shapes):
+        # Initialize here for torch.jit
+        if self.criterion is None:
+            self.criterion = SafeNTXentLoss(temperature=self.ntx_temp)
         # Produce labels
         is_known_dict = {}
         for t in targets:
@@ -377,10 +386,10 @@ class GalleryFilterNetwork(nn.Module):
 
         # Prep query and image features for GFN: detach during training
         ## Do not combine query features with any image features
-        if self.mode == 'separate':
+        if self.gfn_mode == 'separate':
             gfn_query_features = query_emb
         ## Combine query features with the image against which they are to be compared
-        elif self.mode == 'combined':
+        elif self.gfn_mode == 'combined':
             # Get features combined with all possible target images
             gfn_query_features_list = self.fuser(query_emb, scene_emb, p=True)
             # Get features combined with their source image
@@ -421,7 +430,7 @@ class GalleryFilterNetwork(nn.Module):
         else:
             image_pid_diff_mask = _image_pid_diff_mask
 
-        if self.mode == 'separate':
+        if self.gfn_mode == 'separate':
             # Get pairs
             gfn_a1, gfn_p = torch.where(image_pid_match_mask)
             gfn_a2, gfn_n = torch.where(image_pid_diff_mask)
@@ -430,7 +439,7 @@ class GalleryFilterNetwork(nn.Module):
             # Compute GFN Loss
             gfn_loss = self.criterion(scene_emb, image_labels,
                 ref_emb=gfn_query_features, ref_labels=gfn_met_label_tsr, indices_tuple=indices_tuple)
-        elif self.mode == 'combined':
+        elif self.gfn_mode == 'combined':
             gfn_image_features_list = gfn_query_features_list.permute(1, 0, 2)
             match_mask_list, diff_mask_list = [], []
             for query_idx in range(Q):
@@ -453,7 +462,7 @@ class GalleryFilterNetwork(nn.Module):
             gfn_same_pairs = (gfn_a1, gfn_p, gfn_a2, gfn_n)
             gfn_loss = self.criterion(gfn_query_features, gfn_met_label_tsr,
                 ref_emb=flat_gfn_image_features, ref_labels=flat_gfn_image_labels, indices_tuple=gfn_same_pairs)
-        elif self.mode == 'image':
+        elif self.gfn_mode == 'image':
             # Get pairs
             gfn_a1, gfn_p = torch.where(gfn_image_match_mask)
             gfn_a2, gfn_n = torch.where(~gfn_image_match_mask)

@@ -37,6 +37,8 @@ emb_norm_type: 'batchnorm'
 freeze_layer1: True
 ### Whether to freeze batchnorm layers in model backbone
 freeze_backbone_batchnorm: True
+### Whether to load pretrained weights
+pretrained: True
 
 # GFN
 ### Whether to use the GFN

@@ -203,7 +203,7 @@ class ConvertCoco(object):
         # Store info in target dict
         target['area'] = area
         target['person_id'] = person_id_arr.tolist()
-        target['image_size'] = [w, h]
+        target['image_size'] = torch.FloatTensor([w, h])
         target['id'] = ids.tolist()
         target['iou_thresh'] = iou_thresh
         target['is_known'] = is_known
