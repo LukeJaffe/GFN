@@ -142,3 +142,8 @@ Thanks to the authors of the following repos for their code, which was integral 
     pages     = {1684-1693}
 }
 ```
+
+## License
+This repository uses the MIT license.
+
+Additional required notice: THIS SOFTWARE AND/OR DATA WAS DEPOSITED IN THE BAIR OPEN RESEARCH COMMONS REPOSITORY ON 10/24/2022.
