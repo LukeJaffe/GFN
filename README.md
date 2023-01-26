@@ -22,10 +22,14 @@ The [jupyter notebook](./notebooks/web_demo.ipynb) in ./notebooks/web_demo.ipynb
 In person search, our goal is to locate a query person in a set of scene images called a gallery.
 
 Person bounding boxes are detected, embeddings are extracted, and gallery person embeddings are compared to query person embeddings using cosine similarity. This cosine similarity is shown in the top left of detected boxes below.
+
+In addition, query person and gallery scene embeddings are compared by the GFN to produce a person-scene score. This GFN score is shown below each gallery image.
+
 ![Person Search](assets/person_search_demo.png)
 
 ### Person Re-Identification
 Then, detected persons are ranked by similarity to the query person. In this example, we can see the top match is correct.
+
 <img src="assets/person_reid_demo.png" alt="Person Re-id" width="600"/>
 
 ## Model Architecture
