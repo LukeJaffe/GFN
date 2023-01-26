@@ -8,24 +8,35 @@ The Object Search Research (OSR) package implements data prep, training, and inf
 We achieve state-of-the-art results on the benchmark CUHK-SYSU and PRW datasets, shown below, with
 downloadable model checkpoints. Metrics are computed with and without the Gallery Filter Network (GFN).
 
-| Dataset   | Backbone      | mAP  | Top-1 | mAP (+GFN) | Top-1 (+GFN) | Model |
-| --------- | ------------- | ---- | ----- | --------- | ----------- | ----- |
-| PRW       | ConvNeXt Base | 57.6 | 89.5  | 58.3      | 92.4        | [model](https://drive.google.com/file/d/17j8rYkcxPx599Eh6T-o6S9WvlRITOPt0/view?usp=sharing) |
-| PRW       | ResNet50      | 50.8 | 86.0  | 51.3      | 90.6        | --- |
-| CUHK-SYSU | ConvNeXt Base | 96.1 | 96.5  | 96.4      | 97.0        | [model](https://drive.google.com/file/d/1wWoQkpWN9-F1i8GqfX26DTf_mRNvxfZH/view?usp=sharing) |
-| CUHK-SYSU | ResNet50      | 94.1 | 94.7  | 94.7      | 95.3        | --- |
+| Dataset   | Backbone      | mAP  | Top-1 | mAP (+GFN) | Top-1 (+GFN) | Checkpoint | Torchscript |
+| --------- | ------------- | ---- | ----- | --------- | ----------- | ----- | --- |
+| PRW       | ConvNeXt Base | 57.6 | 89.5  | 58.3      | 92.4        | [link](https://drive.google.com/file/d/1DWuruI2gjCkhZOkXMpvRG0mEnKtYZKFO/view?usp=share_link) | [link](https://drive.google.com/file/d/1c1sz74lvZ5hQ4FcdBufTjx6tDuL9WNjL/view?usp=share_link) |
+| PRW       | ResNet50      | 50.8 | 86.0  | 51.3      | 90.6        | --- | --- |
+| CUHK-SYSU | ConvNeXt Base | 96.1 | 96.5  | 96.4      | 97.0        | [link](https://drive.google.com/file/d/1TmrCCXteUccr3smG9SLrM5bR_qsu9lzu/view?usp=share_link) | [link](https://drive.google.com/file/d/1WmIbnFQdIu-CQc7GervuBoC9utYkooRC/view?usp=share_link) |
+| CUHK-SYSU | ResNet50      | 94.1 | 94.7  | 94.7      | 95.3        | --- | --- |
 
 ## Demo
+The [jupyter notebook](./notebooks/web_demo.ipynb) in ./notebooks/web_demo.ipynb downloads images from arbitrary URLs and performs person search and GFN scoring using a torchscript version of the model (link above). An example is shown below.  
+
+### Person Detection
+In person search, our goal is to locate a query person in a set of scene images called a gallery.
+
+Person bounding boxes are detected, embeddings are extracted, and gallery person embeddings are compared to query person embeddings using cosine similarity. This cosine similarity is shown in the top left of detected boxes below.
 ![Person Search](assets/person_search_demo.png)
+
+### Person Re-Identification
+Then, detected persons are ranked by similarity to the query person. In this example, we can see the top match is correct.
 <img src="assets/person_reid_demo.png" alt="Person Re-id" width="600"/>
 
 ## Model Architecture
+The model architecture is a standard end-to-end person search architecture based on the SeqNet model, which takes query (Q) and gallery (G) scenes, detects and extracts person embeddings, and compares embeddings for re-id. An additional branch is added to this model to compute scene embeddings, which are used by the GFN to compute person-scene scores.
+
 ![Model Architecture](assets/model_arch.png)
 
 ## Installation
 The OSR package can be installed with docker or conda.
 We provide example install instructions below, so the user can use
-the commands in setup.py "out of the box". 
+the commands in setup.py out of the box. 
 
 ### docker
 ```
