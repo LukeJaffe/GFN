@@ -130,13 +130,37 @@ osr_run --trial_config=./configs/cuhk_train_final.yaml
 osr_run --trial_config=./configs/prw_train_final.yaml
 ```
 
-## Inference
+## Evaluation
 Trained model checkpoints for the final models are available at the google drive links above in the results table. To test, you may use one of these checkpoints, or run the training script, then modify the checkpoint path in the test .yaml files to the resulting training checkpoint.
 
 To test the final models:
 ```
 osr_run --trial_config=./configs/cuhk_test_final.yaml
 osr_run --trial_config=./configs/prw_test_final.yaml
+```
+
+## Inference
+To perform inference on arbitrary images:
+```
+osr_search --torchscript_path <TORCHSCRIPT_PATH> \
+  --query_path <QUERY_PATH> \
+  --gallery_dir <GALLERY_DIR> \
+  --output_dir <OUTPUT_DIR>
+```
+
+Then, you can view the results using ./notebooks/inference_viewer.ipynb.
+
+## Utilities
+To convert pytorch checkpoint to torchscript:
+```
+osr_model_convert --trial_config <TRIAL_CONFIG> \
+  --torchscript_path <TORCHSCRIPT_PATH>
+```
+
+To reduce size of pytorch checkpoint produced from training (by removing optimizer state dict):
+```
+osr_model_shrink --old_ckpt_path <OLD_CKPT_PATH> \
+  --new_ckpt_path <NEW_CKPT_PATH>
 ```
 
 ## Acknowledgment
