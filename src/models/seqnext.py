@@ -2,7 +2,6 @@
 ## general imports
 import math
 import copy
-import time
 import numpy as np
 import collections
 ## torch and torchvision
@@ -285,61 +284,58 @@ class SeqNeXt(nn.Module):
         self.lw_box_reid = config['lw_box_reid']
 
 
-    def inference(self, images: List[Tensor], targets:Optional[List[Dict[str, Tensor]]]=None, inference_mode:str='both') -> Tuple[List[Dict[str, Tensor]], List[Tensor], Optional[Tensor]]:
+    def inference(self, images: List[Tensor], targets:Optional[List[Dict[str, Tensor]]]=None, inference_mode:str='both') -> List[Dict[str, Tensor]]:
+        #
         original_image_sizes = [(img.shape[-2], img.shape[-1]) for img in images]
-        #t0 = time.time()
+        num_images = len(original_image_sizes)
         images, targets = self.transform(images, targets)
-        #t1 = time.time()
         bb_features = self.backbone(images.tensors)
 
         # Get image features from the GFN
-        #t2 = time.time()
         if self.use_gfn:
-            scene_emb = self.gfn.get_scene_emb(bb_features)
+            scene_emb = self.gfn.get_scene_emb(bb_features).split(1, 0)
         else:
-            scene_emb = None
+            scene_emb = [torch.empty(0) for _ in range(num_images)]
 
         #
         reid_features = bb_features
 
-        detections, embeddings = [{}], [torch.empty(0)]
-        #t3 = time.time()
+        detections = [{} for _ in range(num_images)]
+        embeddings = [torch.empty(0) for _ in range(num_images)]
         if (inference_mode in ('gt', 'both')) and (targets is not None):
             # query
             boxes = [t["boxes"] for t in targets]
+            section_lens = [len(b) for b in boxes]
             box_features = self.roi_heads.reid_roi_pool(reid_features, boxes, images.image_sizes)
             box_features = self.roi_heads.reid_head(box_features)
             _embeddings, _ = self.roi_heads.embedding_head(box_features)
-            embeddings = _embeddings.split(1, 0)
-        #t4 = time.time()
+            embeddings = _embeddings.split(section_lens, dim=0)
         if (inference_mode in ('det', 'both')) or (inference_mode in ('gt', 'both')):
             # gallery
             rpn_features = bb_features
             proposals, _ = self.rpn(images, rpn_features, targets)
-            #t5 = time.time()
             detections, _ = self.roi_heads(
                 bb_features, proposals, images.image_sizes, targets
             )
-            #t6 = time.time()
             detections = self.transform.postprocess(
                 detections, images.image_sizes, original_image_sizes
             )
-            #t7 = time.time()
-        #
-        time_dict = {
-            #'transform': t1-t0, # negligible
-            #'backbone': t2-t1,
-            #'scene_feat': t3-t2,
-            #'query_feat': t4-t3,
-            #'rpn_det': t5-t4,
-            #'roi_det': t6-t5,
-            #'postprocess': t7-t6, # negligible
-        }
 
-        return detections, embeddings, scene_emb
+        # Reorganize outputs into single list of dict
+        output_list = [{
+            'det_boxes': d['boxes'],
+            'det_scores': d['scores'],
+            'det_labels': d['labels'],
+            'det_emb': d['embeddings'],
+            'gt_emb': e,
+            'scene_emb': s,
+        } for d, e, s in zip(detections, embeddings, scene_emb)]
+
+        # Return output
+        return output_list
 
 
-    def forward(self, images: List[Tensor], targets:Optional[List[Dict[str, Tensor]]]=None, inference_mode:str='both') -> Tuple[List[Dict[str, Tensor]], List[Tensor], Optional[Tensor]]:
+    def forward(self, images: List[Tensor], targets:Optional[List[Dict[str, Tensor]]]=None, inference_mode:str='both') -> Dict[str, Tensor]:
         if not self.training:
             return self.inference(images, targets, inference_mode=inference_mode)
 

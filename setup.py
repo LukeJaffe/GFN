@@ -10,7 +10,8 @@ setuptools.setup(
     namespace_packages=[PACKAGE],
     version=open('VERSION').read().strip(),
     description='Object Search Research Library',
-    packages=['osr', 'osr.data', 'osr.models', 'osr.engine', 'osr.losses'],
+    packages=['osr', 'osr.data', 'osr.models', 'osr.engine', 'osr.losses',
+        'osr.app', 'osr.viz'],
     package_dir={'osr': 'src'},
     entry_points={
         'console_scripts': [
@@ -27,6 +28,21 @@ setuptools.setup(
             (
                 '{pkg}_run = '
                 '{pkg}.engine.main:main'
+                .format(pkg=PACKAGE)
+            ),
+            (
+                '{pkg}_search = '
+                '{pkg}.app.search:main'
+                .format(pkg=PACKAGE)
+            ),
+            (
+                '{pkg}_model_convert = '
+                '{pkg}.app.convert:main'
+                .format(pkg=PACKAGE)
+            ),
+            (
+                '{pkg}_model_shrink = '
+                '{pkg}.app.shrink:main'
                 .format(pkg=PACKAGE)
             ),
         ]

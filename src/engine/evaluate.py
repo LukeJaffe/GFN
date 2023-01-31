@@ -28,7 +28,7 @@ DetectionLookupEntry = collections.namedtuple('DetectionLookupEntry',
     ['boxes', 'scores', 'embeddings', 'labels'],
 )
 
-RetrievalLookupEntry = collections.namedtuple('DetectionLookupEntry',
+RetrievalLookupEntry = collections.namedtuple('RetrievalLookupEntry',
     ['sims', 'boxes', 'iou', 'gfn_scores'],
     defaults=[None, None, None, None],
 )
@@ -108,18 +108,25 @@ def run_model(model, data_loader, use_amp=False, device='cuda'):
         detection_lookup = {}
         for iter_idx, (images, targets) in tqdm(enumerate(data_loader), ncols=0, total=len(data_loader)):
             images, targets = engine_utils.to_device(images, targets, device)
-            detections, embeddings, scene_emb = model(images, targets, inference_mode='both')
-            embeddings = torch.cat(embeddings)
-            assert len(targets) == len(detections)
+            outputs = model(images, targets, inference_mode='both')
+            for output in outputs:
+                print(output['gt_emb'].shape)
+            embeddings = torch.cat([output['gt_emb'] for output in outputs])
+            assert len(targets) == len(outputs)
             # XXX
-            for target, detection in zip(targets, detections):
+            for target, output in zip(targets, outputs):
                 image_id = target['image_id'].item()
                 image_lookup[image_id] = ImageLookupEntry(
                     id=target['id'], person_ids=target['person_id'], iou_thresh=target['iou_thresh'].cpu(),
                     boxes=target['boxes'], scores=torch.ones(target['boxes'].size(0)), embeddings=embeddings,
-                    features=scene_emb,
+                    features=output['scene_emb'],
                 )
-                detection_lookup[image_id] = DetectionLookupEntry(**detection)
+                detection_lookup[image_id] = DetectionLookupEntry(
+                    boxes=output['det_boxes'],
+                    scores=output['det_scores'],
+                    labels=output['det_labels'],
+                    embeddings=output['det_emb'],
+                )
                 #
                 assert len(target['id']) == len(target['person_id']) == len(embeddings)
                 for _id, _person_id, _box, _embedding in zip(target['id'].tolist(), target['person_id'], target['boxes'], embeddings.unsqueeze(1)):
