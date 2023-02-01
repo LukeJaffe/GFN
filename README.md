@@ -10,9 +10,9 @@ downloadable model checkpoints. Metrics are computed with and without the Galler
 
 | Dataset   | Backbone      | mAP  | Top-1 | mAP (+GFN) | Top-1 (+GFN) | Checkpoint | Torchscript |
 | --------- | ------------- | ---- | ----- | --------- | ----------- | ----- | --- |
-| PRW       | ConvNeXt Base | 57.6 | 89.5  | 58.3      | 92.4        | [link](https://drive.google.com/file/d/1DWuruI2gjCkhZOkXMpvRG0mEnKtYZKFO/view?usp=share_link) | [link](https://drive.google.com/file/d/1rViqjC_VUDPwy4DS631JJnyZ8FDp5hCB/view?usp=share_link) |
+| PRW       | ConvNeXt Base | 57.6 | 89.5  | 58.3      | 92.4        | [link](https://drive.google.com/file/d/1TmrCCXteUccr3smG9SLrM5bR_qsu9lzu/view?usp=share_link) | [link](https://drive.google.com/file/d/1rViqjC_VUDPwy4DS631JJnyZ8FDp5hCB/view?usp=share_link) |
 | PRW       | ResNet50      | 50.8 | 86.0  | 51.3      | 90.6        | --- | --- |
-| CUHK-SYSU | ConvNeXt Base | 96.1 | 96.5  | 96.4      | 97.0        | [link](https://drive.google.com/file/d/1TmrCCXteUccr3smG9SLrM5bR_qsu9lzu/view?usp=share_link) | [link](https://drive.google.com/file/d/1pmka6VZmmxaQnuxsxQ_qOUjXN21mbav-/view?usp=share_link) |
+| CUHK-SYSU | ConvNeXt Base | 96.1 | 96.5  | 96.4      | 97.0        | [link](https://drive.google.com/file/d/1DWuruI2gjCkhZOkXMpvRG0mEnKtYZKFO/view?usp=share_link) | [link](https://drive.google.com/file/d/1pmka6VZmmxaQnuxsxQ_qOUjXN21mbav-/view?usp=share_link) |
 | CUHK-SYSU | ResNet50      | 94.1 | 94.7  | 94.7      | 95.3        | --- | --- |
 
 ## Demo
